@@ -73,6 +73,7 @@ public final class MainActivity extends Activity
   private AssistantEngine engine;
   private SharedPreferences prefs;
   private TextToSpeech tts;
+  private GeminiKey gemini;
   private boolean ttsReady, initiallyOpened, pendingKeyboard, pendingMicTest, showingExamples;
   private MicrophoneProbe micProbe;
   private String lastCommand = "";
@@ -94,7 +95,8 @@ public final class MainActivity extends Activity
       auth = null;
     }
     tools = new Tools(this, this);
-    engine = new AssistantEngine(this, tools, auth, this);
+    gemini = new GeminiKey(this);
+    engine = new AssistantEngine(this, tools, auth, gemini, this);
     tts =
         new TextToSpeech(
             this,
@@ -736,10 +738,17 @@ public final class MainActivity extends Activity
     List<Row> rows = new ArrayList<>();
     JSONObject active = auth == null ? null : auth.active();
     boolean connected = active != null && ChatAuth.hasPlan(active);
+    boolean geminiOn = engine.usesGemini();
+    rows.add(
+        new Row(
+            "Gemini",
+            gemini.present() ? (geminiOn ? "Active · " + engine.geminiModel() : "Key stored · not active")
+                : "No key",
+            this::settingsGemini));
     rows.add(
         new Row(
             "ChatGPT account",
-            connected ? "Connected" : auth == null ? "Unavailable" : "Local only",
+            connected ? (geminiOn ? "Connected · not active" : "Connected") : auth == null ? "Unavailable" : "Local only",
             this::settingsAccount));
     rows.add(new Row("AI limits", "4 requests · 10 steps", this::settingsLimits));
     rows.add(new Row("Permissions", "Navigation and playback", this::settingsPermissions));
@@ -747,10 +756,81 @@ public final class MainActivity extends Activity
     rows.add(new Row("Close", null, this::dismissOpen));
     sheet(
         "Settings",
-        connected
-            ? "Connected to ChatGPT. Commands are interpreted by AI."
-            : "Not connected. Basic commands still work offline.",
+        geminiOn
+            ? "Using Gemini. Commands are interpreted by AI."
+            : connected
+                ? "Connected to ChatGPT. Commands are interpreted by AI."
+                : "Not connected. Basic commands still work offline.",
         rows);
+  }
+
+  private void settingsGemini() {
+    List<Row> rows = new ArrayList<>();
+    rows.add(new Row("Choose Gemini model", engine.geminiModel(), () -> replace(this::geminiModels)));
+    rows.add(
+        new Row(
+            "Prefer ChatGPT when signed in",
+            toggle("chatgpt".equals(prefs.getString("provider", "auto"))),
+            () ->
+                replace(
+                    () -> {
+                      boolean chatgpt = "chatgpt".equals(prefs.getString("provider", "auto"));
+                      prefs.edit().putString("provider", chatgpt ? "auto" : "chatgpt").apply();
+                      engine.clear();
+                      updateAccount();
+                      settingsGemini();
+                    })));
+    if (gemini.present())
+      rows.add(
+          new Row(
+              "Remove Gemini key",
+              null,
+              () -> replace(() -> {
+                gemini.clear();
+                engine.clear();
+                updateAccount();
+                status("Gemini key removed");
+              }),
+              true));
+    rows.add(new Row("Close", null, this::dismissOpen));
+    sheet(
+        "Gemini",
+        gemini.present()
+            ? "A Google AI Studio key is stored encrypted on this TV."
+            : "No key yet. Provision it from a computer: install.py --gemini-key-file <file>.",
+        rows);
+  }
+
+  private void geminiModels() {
+    if (!gemini.present()) {
+      assistant("Provision a Gemini API key first.");
+      return;
+    }
+    status("Loading Gemini models…");
+    new Thread(
+            () -> {
+              try {
+                JSONArray catalog = engine.geminiCatalog();
+                String[] labels = new String[catalog.length()];
+                for (int i = 0; i < labels.length; i++)
+                  labels[i] = catalog.getJSONObject(i).getString("display_name");
+                handler.post(
+                    () ->
+                        sheet(
+                            "Choose Gemini model",
+                            "Default: " + Gemini.DEFAULT_MODEL + ", fallback " + Gemini.FALLBACK_MODEL + ".",
+                            rowsFor(
+                                labels,
+                                index -> {
+                                  prefs.edit().putString("gemini_model", catalog.optJSONObject(index).optString("slug")).apply();
+                                  updateAccount();
+                                  status("Selected " + labels[index]);
+                                })));
+              } catch (Exception e) {
+                status(ChatAuth.safe(e));
+              }
+            })
+        .start();
   }
 
   private void settingsAccount() {
@@ -1159,6 +1239,8 @@ public final class MainActivity extends Activity
                   .append(passed)
                   .append("/6 local checks passed.\nNavigation: ")
                   .append(NavigationService.instance != null ? "enabled" : "needs permission")
+                  .append("\nGemini: ")
+                  .append(gemini.present() ? (engine.usesGemini() ? "active · " + engine.geminiModel() : "key stored, not active") : "no key")
                   .append("\nChatGPT: ")
                   .append(
                       auth != null && ChatAuth.hasPlan(auth.active())
@@ -1604,10 +1686,11 @@ public final class MainActivity extends Activity
   private void updateAccount() {
     JSONObject a = auth == null ? null : auth.active();
     boolean plan = a != null && ChatAuth.hasPlan(a);
-    accountStatus.setText(plan ? a.optString("email", "ChatGPT account") : "Local commands");
-    accountStatus.setTextColor(plan ? GOOD : WARN);
+    boolean geminiOn = engine.usesGemini();
+    accountStatus.setText(geminiOn ? "Gemini" : plan ? a.optString("email", "ChatGPT account") : "Local commands");
+    accountStatus.setTextColor(geminiOn || plan ? GOOD : WARN);
     accountMeta.setText(
-        (plan ? "ChatGPT plan · " : "No AI connection · ")
+        (geminiOn ? engine.geminiModel() + " · " : plan ? "ChatGPT plan · " : "No AI connection · ")
             + tools.names().size()
             + " tools · navigation "
             + (NavigationService.instance == null ? "off" : "on"));
