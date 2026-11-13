@@ -1,4 +1,63 @@
-# TV Assistant
+# TV Assistant (Gemini fork)
+
+This fork of [mertmr/tv-assistant](https://github.com/mertmr/tv-assistant) (MIT) adds **Google Gemini**
+as an AI provider. Everything still runs on the TV. The upstream ChatGPT path is unchanged.
+
+## Gemini provider (fork addition)
+
+- **Provider choice.** If a Gemini API key is stored, Gemini is the default. ChatGPT is used only when
+  no key is stored, or when you sign in to ChatGPT and turn on **Settings → Gemini → Prefer ChatGPT
+  when signed in**.
+- **API.** Gemini API `generateContent` (`v1beta`) with a Google AI Studio API key in the
+  `x-goog-api-key` header. Function calling works like the ChatGPT path: each tool definition becomes a
+  `functionDeclarations` entry. Its JSON Schema is passed unchanged as `parametersJsonSchema`.
+  Request and tool budgets, the final-round "report now" turn (`functionCallingConfig.mode = NONE`),
+  tool-output truncation and conversation memory are all shared with the ChatGPT path. Model turns
+  are kept verbatim, so Gemini 3 thought signatures come back unchanged.
+- **Models.** The default is `gemini-3.8-flash`. If a request fails with HTTP 404, 429 or 5xx, or
+  times out, that request is retried once on `gemini-3.5-flash-lite`. You can pick another model under
+  **Settings → Gemini → Choose Gemini model**, which lists the models your key can use, or pass
+  `--gemini-model` to the installer.
+- **Screen vision.** A `screen_see` screenshot is sent as an `inlineData` JPEG part next to the
+  function response. Only the newest image is kept.
+- **Language.** In Gemini mode the system prompt has an extra section for Puerto Rican Spanish and
+  Spanglish dictation: misheard words, titles spelled the way they sound, and local vocabulary. The
+  assistant answers in short, plain Spanish. App and show titles are kept in their original spelling.
+  App UI text stays in English.
+- **Key storage.** The key is encrypted with AES-GCM using the same Android Keystore key as the
+  ChatGPT OAuth tokens. It is held in a separate preference file (`gemini_vault`), and
+  `allowBackup=false` still applies.
+
+### Provisioning the key over ADB (nobody types it on the TV)
+
+```bash
+# key in a local file that is never committed (or export GEMINI_API_KEY and use --gemini-key-env)
+python3 install.py --device <tv-ip>:5555 --port 5037 --enable-navigation --enable-playback \
+  --gemini-key-file ~/path/to/gemini.key
+# change only the key or model later, without reinstalling:
+python3 install.py --device <tv-ip>:5555 --port 5037 --skip-install --no-launch --gemini-key-file ~/path/to/gemini.key
+python3 install.py --device <tv-ip>:5555 --port 5037 --skip-install --no-launch --clear-gemini-key
+```
+
+The installer sends the key to `KeyReceiver` through an `adb shell` session's stdin, so it does not
+show up in the computer's process list. The receiver is protected by `android.permission.DUMP`,
+which the ADB shell holds and ordinary apps cannot get, so no other app on the TV can replace the
+key. On the TV, the key is visible in the `am broadcast` command line for the moment that command
+runs. The receiver never logs the key or echoes it back.
+
+### Upgrading from upstream
+
+This fork keeps the package name `dev.mert.tvassistant`. An upstream build signed with a different
+key must be uninstalled before this one is installed (`adb uninstall dev.mert.tvassistant`).
+
+### Build notes
+
+`./build.sh` needs a JDK on `PATH`. Homebrew `openjdk@21` works:
+`JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home`. The debug signing key is
+created once in `build/debug.keystore` and is git-ignored. Keep it, because later updates must be
+signed with the same key.
+
+---
 
 A native Android TV / Fire OS assistant using the remote's keyboard dictation. The APK runs entirely on the TV; the Mac is needed only to build, install, or enable permissions on Fire TV. When connected to ChatGPT with plan usage enabled, every command is interpreted by AI using a bounded Responses API tool loop. Basic local parsing is available only when disconnected or when you explicitly enable local-only mode.
 

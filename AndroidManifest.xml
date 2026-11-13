@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="dev.mert.tvassistant" android:versionCode="11" android:versionName="0.2.4">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="dev.mert.tvassistant" android:versionCode="12" android:versionName="0.2.4-gemini.1">
  <uses-sdk android:minSdkVersion="23" android:targetSdkVersion="28" />
  <uses-permission android:name="android.permission.INTERNET" />
  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -22,6 +22,9 @@
   <service android:name=".PlaybackService" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" android:exported="true" android:label="TV Assistant playback">
    <intent-filter><action android:name="android.service.notification.NotificationListenerService"/></intent-filter>
   </service>
+  <receiver android:name=".KeyReceiver" android:exported="true" android:permission="android.permission.DUMP">
+   <intent-filter><action android:name="dev.mert.tvassistant.SET_GEMINI_KEY"/><action android:name="dev.mert.tvassistant.CLEAR_GEMINI_KEY"/></intent-filter>
+  </receiver>
   <service android:name=".CaptureService" android:exported="false" android:foregroundServiceType="mediaProjection" />
  </application>
 </manifest>

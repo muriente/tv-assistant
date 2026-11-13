@@ -12,7 +12,16 @@ final class Vault {
   private final SharedPreferences prefs;
 
   Vault(Context c) {
-    prefs = c.getSharedPreferences("account_vault", Context.MODE_PRIVATE);
+    this(c, "account_vault");
+  }
+
+  /** A separate encrypted store that shares the same Android Keystore key. */
+  Vault(Context c, String name) {
+    prefs = c.getSharedPreferences(name, Context.MODE_PRIVATE);
+  }
+
+  synchronized void clear() {
+    prefs.edit().remove("encrypted").commit();
   }
 
   private SecretKey key() throws Exception {
